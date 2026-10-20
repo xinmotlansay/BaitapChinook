@@ -1,234 +1,243 @@
-# TECHSPEC — Chinook Recommender (Album & Track cho Customer)
+# TECHSPEC — Hệ gợi ý Album & Track cho Customer (Chinook)
 
 | | |
 |---|---|
-| Phiên bản | 0.1 (draft để duyệt) |
+| Phiên bản | 1.0 |
 | Ngày | 2026-10-20 |
-| Loại dự án | Demo / portfolio |
-| Stack | Python 3.11+, SQLite, pandas, scikit-learn, LightGBM, PySide6 + Qt Designer (`.ui`) |
-| Nguồn dữ liệu | `Chinook_Sqlite.sqlite` (chỉ đọc) |
+| Loại dự án | Bài tập môn Học máy |
+| Ngôn ngữ / UI | Python 3.11+, PySide6 + Qt Designer (`.ui`), giao diện tiếng Việt |
+| Thư viện | pandas, numpy, scikit-learn, lightgbm, matplotlib, PySide6 |
+| Dữ liệu | `Chinook_Sqlite.sqlite` (chỉ đọc) |
 
 ---
 
 ## 1. Mục tiêu & phạm vi
 
-**Mục tiêu:** Với mỗi customer, gợi ý Top-K **album** (chính) mà họ nhiều khả năng sẽ mua tiếp, kèm danh sách **track** đại diện (phụ) và lý do gợi ý.
+**Mục tiêu:** Với mỗi customer, gợi ý Top-K **album** họ có khả năng mua tiếp; mỗi album kèm vài **track đại diện** và lý do gợi ý.
 
-**Trong phạm vi**
-- Pipeline dữ liệu từ SQLite → bảng tương tác, feature.
-- Huấn luyện & so sánh nhiều mô hình (baseline → hybrid).
-- Đánh giá offline với chia thời gian 80/20.
-- Ứng dụng desktop Qt: xem customer, xem gợi ý, giải thích, so sánh model, chạy train/evaluate.
+**Gồm:** làm sạch dữ liệu → chia train/test 80/20 → huấn luyện & so sánh mô hình → đánh giá → giao diện Qt để dùng thử.
 
-**Ngoài phạm vi (v1):** serving online/API, A/B test, deep learning, cập nhật dữ liệu thời gian thực.
+**Không gồm:** API/server, deep learning, cập nhật dữ liệu thời gian thực, đóng gói file .exe, gợi ý track độc lập (track chỉ gợi ý kèm trong album).
 
-**Quan điểm trung thực về kỳ vọng:** dữ liệu rất nhỏ và thưa (xem §2). Mục tiêu của dự án là *chứng minh quy trình ML đúng và mô hình tốt hơn baseline có ý nghĩa*, không phải đạt độ chính xác tuyệt đối cao.
+**Kỳ vọng:** dữ liệu nhỏ và thưa (§2) nên mục tiêu là *quy trình ML đúng, so sánh công bằng với baseline, kết luận trung thực*, không phải độ chính xác cao.
 
 ---
 
-## 2. Phân tích dữ liệu (đã đo)
+## 2. Phân tích dữ liệu (đã đo trên file thật)
 
 | Hạng mục | Giá trị |
 |---|---|
-| Customer / Track / Album / Artist / Genre | 59 / 3.503 / 347 / 275 (204 có album) / 25 |
-| Tương tác (`InvoiceLine`) | 2.240; `Quantity` luôn = 1; không trùng cặp (customer, track) |
-| Track/customer | 36–38 (TB 38); Album/customer: 18–27 (TB 22) |
-| Invoice/customer | 6–7; khoảng thời gian 2009-01-01 → 2013-12-22 (~83 invoice/năm) |
-| Track được mua | 1.984/3.503 (57%); **1.728 track chỉ 1 người mua**, tối đa 2 người/track |
-| Album được mua | 304/347 (88%) |
-| Tracks/album | 1–57 (TB 10) |
-| Genre | Rock 1.297, Latin 579, Metal 374, Alt&Punk 332... |
-| Null | `Composer` 978 (28%); `Genre` 0 |
+| Customer / Track / Album / Artist / Genre | 59 / 3.503 / 347 / 275 / 25 |
+| Tương tác (`InvoiceLine`) | 2.240, `Quantity` luôn = 1, không trùng (customer, track) |
+| Mỗi customer | ~38 track, ~22 album, 6–7 invoice |
+| Thời gian | 2009-01-01 → 2013-12-22 |
+| Độ thưa | 1.728/1.984 track chỉ 1 người mua; tối đa 2 người/track |
+| Null | `Composer` 978 (28%); `Genre`, `Album` không null |
 | Giá | 0,99 (95%) hoặc 1,99 (video/TV) |
 
 **Kết luận thiết kế**
-1. Ma trận customer×track thưa ~1% và gần như không chồng lấn → **collaborative filtering thuần không dùng được**; cần content-based/hybrid.
-2. Tín hiệu là **implicit, nhị phân** (đã mua = 1); không có rating.
-3. **Track-level** gần như không thể dự đoán (Recall@10 ≈ 1%) → chọn **Album làm đơn vị gợi ý chính**.
-4. Với 59 customer, mô hình lớn sẽ overfit → chọn mô hình nhẹ, ít tham số, đánh giá lặp nhiều seed.
+1. Ma trận customer×track thưa ~1%, gần như không chồng lấn → collaborative filtering thuần vô dụng → dùng **content-based + hybrid**.
+2. Chỉ có tín hiệu implicit nhị phân (đã mua = 1), không có rating.
+3. Track-level gần như không dự đoán được (Recall@10 ≈ 1%) → **đơn vị gợi ý là Album**.
+4. Chỉ 59 customer → dùng mô hình nhẹ, tránh overfit, báo cáo khoảng tin cậy.
 
-### Baseline thăm dò (Recall@10, album, tham chiếu để đặt mục tiêu)
-
-| Cách chia | Popularity | Genre | Artist+Genre |
-|---|---|---|---|
-| Theo thời gian | 5,3% | 4,2% | 7,7% |
-| Ngẫu nhiên | 7,1% | 5,2% | 19,6% |
-
-(Chia ngẫu nhiên cao hơn vì rò rỉ: các album cùng artist rải đều qua các invoice.)
+Baseline thăm dò (Recall@10, album, chia theo thời gian): Popularity 5,3% · Genre 4,2% · Artist+Genre 7,7%.
 
 ---
 
 ## 3. Yêu cầu
 
-### 3.1 Chức năng (FR)
-
-| ID | Yêu cầu | Ưu tiên |
-|---|---|---|
-| FR-01 | Nạp dữ liệu từ file SQLite, kiểm tra schema, chỉ đọc | Must |
-| FR-02 | Tạo bảng tương tác customer–album và customer–track kèm timestamp | Must |
-| FR-03 | Chia train/validation/test theo thời gian trong từng customer (80/20) | Must |
-| FR-04 | Huấn luyện các mô hình: Popularity, Genre/Artist-profile, Content-based, Hybrid LightGBM Ranker | Must |
-| FR-05 | Đánh giá bằng Recall@K, Precision@K, NDCG@K, MAP@K, HitRate@K, Coverage, Diversity | Must |
-| FR-06 | Gợi ý Top-K album cho 1 customer, loại các album đã mua | Must |
-| FR-07 | Với mỗi album gợi ý, hiển thị track đại diện (top track theo độ phổ biến/khớp profile) | Must |
-| FR-08 | Giải thích lý do gợi ý (genre/artist khớp, độ phổ biến, điểm thành phần) | Should |
-| FR-09 | Xử lý cold-start (customer chưa có giao dịch): popularity theo quốc gia + genre chọn tay | Should |
-| FR-10 | Lưu/nạp model và báo cáo đánh giá (`artifacts/`) | Must |
-| FR-11 | UI Qt: chọn customer, xem lịch sử mua, xem gợi ý, so sánh model, chạy train/evaluate | Must |
-| FR-12 | Gợi ý track độc lập (content-based) ở chế độ thử nghiệm | Could |
-
-### 3.2 Phi chức năng (NFR)
+### 3.1 Chức năng
 
 | ID | Yêu cầu |
 |---|---|
-| NFR-01 | Tái lập được: seed cố định, cấu hình trong `config.yaml`, version thư viện trong `requirements.txt` |
-| NFR-02 | Không rò rỉ dữ liệu: mọi thống kê (popularity, profile, target encoding) chỉ tính trên tập train |
-| NFR-03 | Train toàn bộ pipeline < 2 phút trên laptop thường; suy luận 1 customer < 200 ms |
-| NFR-04 | UI không treo khi train (chạy `QThread`/worker) |
-| NFR-05 | Tách lớp: `ml/` không import Qt; UI chỉ gọi service |
-| NFR-06 | Test tự động cho split, metric và không-rò-rỉ |
+| FR-01 | Đọc SQLite, kiểm tra schema, báo lỗi rõ nếu file sai |
+| FR-02 | Làm sạch dữ liệu (§4) và hiển thị báo cáo làm sạch |
+| FR-03 | Tạo bảng tương tác customer–album có thời gian |
+| FR-04 | Chia train/test 80/20 theo thời gian từng customer; xem được kết quả chia |
+| FR-05 | Huấn luyện các mô hình M1–M5 (§6), chọn mô hình/tham số từ UI |
+| FR-06 | Đánh giá trên tập test: Recall@K, Precision@K, NDCG@K, MAP@K, HitRate@K, Coverage, Diversity |
+| FR-07 | Gợi ý Top-K album cho 1 customer (loại album đã mua), kèm track đại diện và lý do |
+| FR-08 | Xử lý customer mới (cold-start): gợi ý theo popularity của quốc gia / genre chọn tay |
+| FR-09 | So sánh nhiều mô hình trên cùng bảng/biểu đồ |
+| FR-10 | Lưu/nạp mô hình đã train và xuất kết quả đánh giá (CSV) |
+
+### 3.2 Phi chức năng
+
+| ID | Yêu cầu |
+|---|---|
+| NFR-01 | Tái lập: seed cố định (42), cấu hình trong `config.py` |
+| NFR-02 | **Không rò rỉ dữ liệu:** mọi thống kê (popularity, profile, feature) chỉ tính từ train |
+| NFR-03 | Train toàn bộ < 2 phút; gợi ý 1 customer < 1 giây |
+| NFR-04 | UI không treo khi train (dùng `QThread`) |
+| NFR-05 | Code ML không phụ thuộc Qt (để test độc lập) |
 
 ---
 
-## 4. Định nghĩa bài toán ML
+## 4. Làm sạch & chuẩn bị dữ liệu
 
-- **Loại:** Top-K recommendation với implicit feedback.
-- **Đơn vị gợi ý:** Album. Ứng viên = mọi album mà customer chưa mua trong tập train.
-- **Nhãn:** `y(u, a) = 1` nếu u mua ít nhất một track của a trong giai đoạn test.
-- **Tín hiệu mạnh hơn (tùy chọn):** số track của album u đã mua / tổng track album (độ phủ), dùng làm trọng số khi dựng profile.
+| Bước | Việc làm |
+|---|---|
+| 1 | Join `InvoiceLine → Invoice → Customer`, `Track → Album → Artist`, `Track → Genre/MediaType` |
+| 2 | Kiểm tra: khóa ngoại mồ côi, trùng lặp, `Quantity ≤ 0`, giá ≤ 0, ngày sai định dạng; ghi log số dòng bị loại |
+| 3 | Chuẩn hóa `InvoiceDate` sang `datetime`; chuẩn hóa chuỗi (strip, lower) cho tên artist/composer |
+| 4 | `Composer` null → `"Unknown"` và thêm cờ `composer_missing`; tách nhiều composer bằng `,`/`/`/`;` |
+| 5 | Gộp track thành tương tác customer–album: `n_tracks_bought`, `coverage = n_tracks_bought / n_tracks_album`, `first_purchase_date` |
+| 6 | Tạo bảng item (album) và bảng user (customer) |
+| 7 | Giữ lại mọi customer (đều có giao dịch); không loại album ít track |
 
-### Chia dữ liệu (80/20 theo thời gian, từng customer)
-
-1. Với mỗi customer, sắp xếp invoice theo `InvoiceDate`.
-2. Lấy các album theo thứ tự lần đầu xuất hiện; **80% đầu → train, 20% cuối → test**. (Trung bình ~4 album test/customer.)
-3. Validation: cắt 20% cuối của *phần train* để chọn siêu tham số; sau đó huấn luyện lại trên toàn bộ train.
-4. Album đã nằm trong train bị loại khỏi ứng viên khi đánh giá.
-5. Bắt buộc báo cáo kèm **khoảng tin cậy** (bootstrap theo customer) vì chỉ có 59 customer.
-
-> Lưu ý: "80% huấn luyện / 20% test" là tỉ lệ dữ liệu. Phần lớn công sức ML nằm ở feature engineering, tuning, so sánh model và phân tích lỗi.
+Kết quả: `interactions.csv`, `albums.csv`, `customers.csv` và một báo cáo làm sạch (số dòng trước/sau, vấn đề phát hiện).
 
 ---
 
-## 5. Feature
+## 5. Bài toán, chia dữ liệu, feature
 
-**Item (album):** artist, genre chủ đạo + phân bố genre (vector), số track, tổng thời lượng, tỉ lệ media type, giá TB, tỉ lệ Composer null, độ phổ biến (số customer mua trong train), số artist-album liên quan.
+**Bài toán:** Top-K recommendation, implicit feedback. Ứng viên = album customer chưa mua trong train. Nhãn: `y(u,a)=1` nếu u mua album a ở giai đoạn test.
 
-**User (từ train):** phân bố genre/artist/media type đã mua (chuẩn hóa), quốc gia, số album đã mua, độ đa dạng genre, thời điểm giao dịch gần nhất.
+**Chia 80/20 theo thời gian, từng customer**
+1. Sắp xếp album của customer theo `first_purchase_date`.
+2. 80% album đầu → **train**; 20% album cuối → **test** (TB ~4 album/customer).
+3. Từ train, 20% cuối → **validation** để chọn tham số; sau đó train lại trên toàn bộ train.
+4. Báo cáo kèm khoảng tin cậy 95% bằng bootstrap theo customer (1.000 lần).
 
-**User×Item (cặp):**
-- cosine(user-genre, album-genre), cosine TF-IDF (artist, composer, genre)
-- số album/track cùng artist user đã mua; cùng genre
-- popularity trong cùng quốc gia
-- recency-weighted affinity (giao dịch gần được trọng số cao hơn)
-- khoảng cách thời gian (nếu dùng chuỗi)
+**Feature**
+- *Album:* artist, phân bố genre (vector), số track, tổng thời lượng, tỉ lệ media type, giá TB, độ phổ biến (đếm trong train).
+- *Customer:* phân bố genre/artist đã mua (chuẩn hóa), quốc gia, số album đã mua, độ đa dạng genre.
+- *Cặp customer–album:* cosine(genre), cosine TF-IDF (artist+composer+genre), số album cùng artist đã mua, popularity theo quốc gia, affinity có trọng số thời gian gần.
 
-**Tránh:** dùng `Invoice.Total`, `InvoiceId` hoặc bất kỳ thứ gì tính từ giai đoạn test.
+Không dùng `Invoice.Total`, `InvoiceId` hay thống kê từ giai đoạn test.
 
 ---
 
 ## 6. Mô hình
 
-| # | Mô hình | Vai trò | Ghi chú |
-|---|---|---|---|
-| M0 | Random | Sàn tham chiếu | |
-| M1 | Popularity (global / theo quốc gia) | Baseline | Cũng dùng cho cold-start |
-| M2 | Genre-profile | Baseline content | |
-| M3 | Artist+Genre profile | Baseline mạnh | Tham chiếu thực tế |
-| M4 | Content-based (TF-IDF/embedding + cosine) | Mô hình chính 1 | Có thể thêm trọng số recency |
-| M5 | Item-item kNN theo nội dung | So sánh | Không dùng đồng-mua do quá thưa |
-| M6 | **Hybrid LightGBM Ranker (LambdaRank)** | Mô hình chính 2 | Feature §5, negative sampling 1:20–1:50 |
-| M7 | (Could) LightFM với item features | So sánh | Chỉ để kiểm chứng không thắng M6 |
+| # | Mô hình | Ghi chú |
+|---|---|---|
+| M1 | Popularity (toàn cục / theo quốc gia) | Baseline, cũng dùng cho cold-start |
+| M2 | Genre-profile | Baseline |
+| M3 | Artist+Genre profile | Baseline mạnh nhất, mốc để so sánh |
+| M4 | Content-based (TF-IDF + cosine với profile customer) | Mô hình chính 1 |
+| M5 | **Hybrid LightGBM Ranker (LambdaRank)** | Mô hình chính 2; negative sampling 1:30; tune trên validation |
 
-**Huấn luyện M6:** positives = cặp (u, album) trong train-target (dựng bằng cách lùi một bước thời gian: dùng 60% đầu làm lịch sử, 20% tiếp theo làm nhãn để học ranker), negatives lấy mẫu từ album chưa mua. Tune bằng validation, Optuna ≤ 50 trial, `early_stopping`.
+**Track đại diện:** trong mỗi album được gợi ý, xếp track theo độ phổ biến trong train và độ khớp genre/composer với profile customer.
 
-**Gợi ý track:** trong mỗi album gợi ý, xếp track theo `0.6*popularity_trong_album + 0.4*độ_khớp_genre/composer` (rule-based v1).
-
-**Cold-start:** customer không có lịch sử → popularity theo quốc gia, có thể lọc theo genre do người dùng chọn.
+**Giải thích:** hiển thị điểm thành phần (genre khớp, artist khớp, popularity) và câu mô tả, ví dụ "Bạn đã mua 5 album Rock, 2 album của AC/DC".
 
 ---
 
 ## 7. Đánh giá
 
-- **Metric chính:** NDCG@10, Recall@10. **Phụ:** Precision@K, MAP@10, HitRate@K, K ∈ {5, 10, 20}.
-- **Beyond-accuracy:** Catalog Coverage@10, Intra-list Diversity (khác genre/artist), Novelty (−log popularity).
-- **Thống kê:** lặp 5 seed (cho phần ngẫu nhiên trong negative sampling/tuning), bootstrap 1.000 lần theo customer để có CI 95%; kiểm định paired với M3.
-- **Tiêu chí chấp nhận:** M6 hoặc M4 cao hơn M3 (Artist+Genre) và M1 về NDCG@10, CI không chứa 0 ở chênh lệch trung bình; nếu không đạt, báo cáo trung thực kèm phân tích lỗi (đây vẫn là kết quả hợp lệ với dữ liệu này).
-- **Phân tích lỗi:** theo genre, theo customer nhiều/ít giao dịch, theo quốc gia.
+- **Chính:** NDCG@10, Recall@10. **Phụ:** Precision@K, MAP@10, HitRate@K với K ∈ {5, 10, 20}.
+- **Ngoài độ chính xác:** Catalog Coverage@10, Diversity (độ khác nhau genre/artist trong danh sách).
+- **Thống kê:** lặp 5 seed cho mô hình có ngẫu nhiên, CI bootstrap, so sánh paired với M3.
+- **Tiêu chí đạt:** M4 hoặc M5 vượt M1 và M3 về NDCG@10 trên test. Nếu không vượt, ghi nhận kết quả thật và phân tích nguyên nhân (cũng được chấp nhận).
+- **Phân tích lỗi:** theo genre, theo số giao dịch của customer, theo quốc gia.
 
 ---
 
-## 8. Kiến trúc & cấu trúc thư mục
+## 8. Cấu trúc dự án (đơn giản, theo kiểu `ui / dal / models / test`)
 
 ```
-chinook-recsys/
-├─ config.yaml
-├─ requirements.txt
-├─ data/                  # đặt Chinook_Sqlite.sqlite (không commit)
-├─ artifacts/             # model, metrics.json, plots
-├─ src/
-│  ├─ data/      loader.py  interactions.py  split.py
-│  ├─ features/  item_features.py  user_features.py  pair_features.py
-│  ├─ models/    base.py  popularity.py  profile.py  content.py  ranker.py
-│  ├─ evaluation/ metrics.py  evaluator.py  bootstrap.py
-│  ├─ services/  recommender_service.py  train_service.py   # lớp duy nhất UI gọi
-│  └─ ui/
-│     ├─ designer/  main_window.ui  customer_panel.ui  compare_panel.ui
-│     ├─ main_window.py  workers.py  widgets/
-│     └─ app.py
-├─ notebooks/             # EDA
-├─ tests/                 # split, metrics, leakage, service
-└─ TECHSPEC.md
+ChinookRecommender/
+├─ databases/
+│  └─ Chinook_Sqlite.sqlite
+├─ connectors/
+│  └─ connector.py          # mở/đóng kết nối SQLite (dùng with, luôn đóng)
+├─ models/                  # lớp chỉ chứa dữ liệu, không có hành vi
+│  ├─ customer.py           # Customer
+│  ├─ album.py              # Album, Track
+│  └─ recommendation.py     # Recommendation (album, điểm, lý do, track đại diện)
+├─ dal/                     # truy cập dữ liệu
+│  ├─ CustomerDAO.py        # lấy customer, tìm kiếm, lịch sử mua
+│  └─ AlbumDAO.py           # lấy album/track, bảng dữ liệu để làm sạch
+├─ ml/                      # phần học máy, không phụ thuộc Qt
+│  ├─ data_prep.py          # làm sạch, tạo interactions, chia train/test 80/20
+│  ├─ features.py           # feature album / customer / cặp
+│  ├─ recommenders.py       # M1–M5, cùng fit() / recommend()
+│  └─ evaluate.py           # metric, bootstrap, so sánh model
+├─ ui/                      # mỗi màn hình có 3 file
+│  ├─ DataMainWindow.ui / .py / DataMainWindowEx.py
+│  ├─ TrainMainWindow.ui / .py / TrainMainWindowEx.py
+│  ├─ EvaluateMainWindow.ui / .py / EvaluateMainWindowEx.py
+│  └─ RecommendMainWindow.ui / .py / RecommendMainWindowEx.py
+├─ test/                    # mở riêng từng cửa sổ để thử bằng tay
+│  ├─ test_data_window.py
+│  ├─ test_train_window.py
+│  ├─ test_evaluate_window.py
+│  ├─ test_recommend_window.py
+│  └─ test_split_metrics.py # kiểm tra tự động chia dữ liệu và metric
+├─ images/                  # icon
+├─ artifacts/               # model đã train, metrics.csv, biểu đồ
+├─ config.py                # seed, tỉ lệ chia, đường dẫn
+├─ main.py                  # chạy app (mở RecommendMainWindow)
+└─ requirements.txt
 ```
 
-**Luồng:** `SQLite → loader → interactions → split → features → models → evaluator → artifacts`; UI → `services` → `models`/`artifacts`.
+**Vai trò**
 
-Giao diện model thống nhất: `fit(train_df)`, `score(user_id, candidate_ids) -> ndarray`, `recommend(user_id, k, exclude)`.
-
----
-
-## 9. Giao diện Qt (Qt Designer + PySide6)
-
-Thiết kế `.ui` bằng Qt Designer, nạp bằng `QUiLoader` hoặc biên dịch `pyside6-uic`. Logic trong `main_window.py`.
-
-| Tab | Nội dung |
+| Thư mục | Nội dung |
 |---|---|
-| **Gợi ý** | Chọn customer (combobox + tìm kiếm), chọn model, K. Bảng Top-K album (artist, genre, điểm, lý do); chọn album → danh sách track đại diện. Bên trái: lịch sử mua (biểu đồ genre). |
-| **So sánh model** | Bảng metric các model, biểu đồ cột có CI, so sánh Top-K của 2 model cho cùng customer |
-| **Huấn luyện & đánh giá** | Chọn model/tham số, nút Train/Evaluate, thanh tiến độ, log (chạy trong worker thread), xuất báo cáo |
-| **Dữ liệu** | Thống kê dataset, phân bố mua, kiểm tra split (hiển thị train/test của từng customer) |
+| `ui/` | `.ui` thiết kế bằng Qt Designer; `.py` sinh tự động bằng `pyside6-uic`; `*Ex.py` chứa logic gắn sự kiện, kế thừa lớp sinh tự động |
+| `dal/` | Chỉ nơi này viết SQL; luôn dùng truy vấn tham số hóa (`?`) |
+| `models/` | Lớp dữ liệu thuần (dataclass) |
+| `ml/` | Làm sạch, chia dữ liệu, feature, mô hình, đánh giá; trả về pandas/dataclass cho UI |
+| `test/` | Các file mở cửa sổ thử tay, thêm một file kiểm tra tự động cho chia dữ liệu và metric |
 
-Biểu đồ dùng `pyqtgraph` hoặc `matplotlib` backend Qt. Hỗ trợ light/dark theo palette hệ thống.
+**Quy ước tránh lỗi thường gặp**
+- Luôn chạy từ thư mục gốc (`python main.py`); import dùng đường dẫn tính từ gốc dự án.
+- Kết nối SQLite mở bằng `with`/`try-finally` để không rò rỉ.
+- Đường dẫn database lấy từ `config.py`, không hard-code trong từng file.
+- Tên cột thống nhất theo schema Chinook (`CustomerId`, `AlbumId`, `TrackId`, `InvoiceDate`...).
+
+Giao diện thống nhất của mô hình: `fit(train)`, `recommend(customer_id, k, exclude)`.
 
 ---
 
-## 10. Kế hoạch triển khai
+## 9. Giao diện Qt (Qt Designer + PySide6, tiếng Việt)
+
+4 màn hình (mỗi màn hình là một `QMainWindow`, `RecommendMainWindow` mở đầu tiên, các màn khác mở từ menu/nút điều hướng):
+
+| Màn hình | Chức năng |
+|---|---|
+| **1. Dữ liệu** (`DataMainWindow`) | Nút chọn file SQLite; nút "Làm sạch"; bảng báo cáo làm sạch; thống kê (số customer/album/track, phân bố genre); xem bảng chia train/test theo từng customer |
+| **2. Huấn luyện** (`TrainMainWindow`) | Chọn mô hình (M1–M5) và tham số chính, tỉ lệ chia (mặc định 80/20); nút Train; thanh tiến độ và log (chạy `QThread`); nút lưu/nạp model |
+| **3. Đánh giá** (`EvaluateMainWindow`) | Bảng metric của các mô hình đã train (kèm CI); biểu đồ cột so sánh; chọn K; nút xuất CSV |
+| **4. Gợi ý** (`RecommendMainWindow`) | Chọn customer (có ô tìm kiếm) hoặc "Customer mới" (chọn quốc gia/genre); chọn mô hình và K; bảng Top-K album (artist, genre, điểm, lý do); chọn album → danh sách track đại diện; bên cạnh là lịch sử mua và biểu đồ genre của customer |
+
+Biểu đồ dùng matplotlib nhúng Qt (`FigureCanvasQTAgg`). Thông báo lỗi bằng `QMessageBox`; các nút bị khóa khi chưa đủ điều kiện (ví dụ chưa làm sạch thì chưa train được).
+
+---
+
+## 10. Kế hoạch & sản phẩm bàn giao
 
 | Giai đoạn | Nội dung | Kết quả |
 |---|---|---|
-| P0 | Khung dự án, loader, EDA, config | Dataset sạch, notebook EDA |
-| P1 | Interaction, split 80/20 theo thời gian, metric + test | Evaluator đã test |
-| P2 | Baseline M0–M3 | Bảng baseline có CI |
-| P3 | Feature + M4, M5 | Content-based chạy được |
-| P4 | M6 Ranker + tuning + phân tích lỗi | Mô hình chính, báo cáo |
-| P5 | Service layer + UI Qt (Designer) | App chạy được end-to-end |
-| P6 | Đóng gói, README, ảnh chụp/GIF demo | Sẵn sàng portfolio |
+| 1 | `ml/data_prep.py`: làm sạch, interactions, chia 80/20 + test | Dữ liệu sạch, báo cáo làm sạch |
+| 2 | `ml/evaluate.py` + baseline M1–M3 | Bảng baseline có CI |
+| 3 | `ml/features.py` + M4, M5, tuning | Mô hình chính, phân tích lỗi |
+| 4 | Thiết kế 4 file `.ui` + `*Ex.py` nối chức năng | App chạy đủ 4 màn hình |
+| 5 | Kiểm thử, viết báo cáo ngắn (kết quả, hạn chế) | Mã nguồn + báo cáo |
+
+**Bàn giao:** mã nguồn, `requirements.txt`, file `.ui`, `metrics.csv` và biểu đồ, hướng dẫn chạy ngắn.
 
 ---
 
 ## 11. Rủi ro
 
-| Rủi ro | Mức | Giảm thiểu |
-|---|---|---|
-| Dữ liệu quá nhỏ, kết quả dao động mạnh | Cao | CI bootstrap, nhiều seed, so sánh paired, báo cáo trung thực |
-| Mô hình không thắng baseline Artist+Genre | Trung bình | Chấp nhận như kết luận; tập trung phân tích lỗi và giải thích |
-| Rò rỉ dữ liệu qua popularity/profile | Cao | Test tự động NFR-06, tính thống kê chỉ trên train |
-| Overfit khi tune | Trung bình | Validation tách riêng, tune ít tham số |
-| Dữ liệu Chinook là tổng hợp, ít cấu trúc thật | Trung bình | Ghi rõ giới hạn trong README |
+| Rủi ro | Giảm thiểu |
+|---|---|
+| Dữ liệu nhỏ → kết quả dao động | CI bootstrap, nhiều seed, so sánh paired |
+| Mô hình không thắng M3 | Chấp nhận và phân tích; ghi vào báo cáo |
+| Rò rỉ dữ liệu | Thống kê chỉ trên train; có test tự động |
+| Overfit khi tune | Validation tách riêng, ít tham số |
+| Chinook là dữ liệu tổng hợp | Nêu rõ trong phần hạn chế của báo cáo |
 
 ---
 
-## 12. Câu hỏi còn mở (chốt ở lượt sau)
+## 12. Các quyết định đã chốt
 
-1. Có thêm chế độ gợi ý track độc lập (FR-12) trong v1 không?
-2. Ngôn ngữ giao diện: Việt, Anh hay song ngữ?
-3. Cần đóng gói thành file thực thi (PyInstaller) cho portfolio không?
+- Đơn vị gợi ý: Album (track chỉ là phụ kèm theo).
+- Chia 80/20 theo thời gian từng customer.
+- Mô hình: classical ML + hybrid, không deep learning.
+- UI: Qt Designer + PySide6, tiếng Việt, cấu trúc `ui / dal / models / ml / test`, mỗi màn hình 3 file (`.ui`, `.py`, `*Ex.py`).
+- Không đóng gói .exe; không gợi ý track độc lập.
