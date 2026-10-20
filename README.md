@@ -10,7 +10,7 @@ Bài tập môn Học máy: gợi ý Top-K **album** (kèm **track đại diện
 - Chia train/test 80/20 theo thời gian của từng customer (không rò rỉ dữ liệu)
 - 5 mô hình: Popularity, Genre-profile, Artist+Genre profile, Content-based, Hybrid LightGBM Ranker
 - Đánh giá bằng Recall@K, Precision@K, NDCG@K, MAP@K, HitRate@K, Coverage, Diversity, kèm khoảng tin cậy 95%
-- Giao diện Qt (tiếng Việt) với 4 tab: Dữ liệu, Huấn luyện, Đánh giá, Gợi ý
+- Giao diện Qt (tiếng Việt) với 4 màn hình: Dữ liệu, Huấn luyện, Đánh giá, Gợi ý
 - Gợi ý cho customer mới (cold-start) theo quốc gia hoặc genre
 
 ## Về dữ liệu
@@ -38,7 +38,7 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Đặt file database vào `data/Chinook_Sqlite.sqlite`.
+Đặt file database vào `databases/Chinook_Sqlite.sqlite`.
 
 Thư viện chính: pandas, numpy, scikit-learn, lightgbm, matplotlib, PySide6.
 
@@ -50,13 +50,14 @@ Thư viện chính: pandas, numpy, scikit-learn, lightgbm, matplotlib, PySide6.
 python main.py
 ```
 
-Thứ tự dùng: tab *Dữ liệu* (chọn file, làm sạch) → *Huấn luyện* (chọn mô hình, Train) → *Đánh giá* (xem bảng/biểu đồ so sánh) → *Gợi ý* (chọn customer, xem Top-K album và track).
+Thứ tự dùng: màn hình *Dữ liệu* (chọn file, làm sạch) → *Huấn luyện* (chọn mô hình, Train) → *Đánh giá* (xem bảng/biểu đồ so sánh) → *Gợi ý* (chọn customer, xem Top-K album và track).
 
-**Dòng lệnh (không cần giao diện):**
+Luôn chạy từ thư mục gốc dự án. Để thử riêng một màn hình: `python -m test.test_recommend_window` (tương tự cho các màn khác).
+
+**Kiểm thử tự động:**
 
 ```bash
-python train.py            # làm sạch → chia 80/20 → train → đánh giá
-python -m pytest tests/    # kiểm thử chia dữ liệu và metric
+python -m pytest test/test_split_metrics.py
 ```
 
 Kết quả (model, `metrics.csv`, biểu đồ) lưu trong `artifacts/`.
@@ -64,23 +65,44 @@ Kết quả (model, `metrics.csv`, biểu đồ) lưu trong `artifacts/`.
 ## Cấu trúc thư mục
 
 ```
-chinook-recsys/
-├─ data/                 # Chinook_Sqlite.sqlite
-├─ ml/
-│  ├─ data_prep.py       # đọc, làm sạch, tạo interactions, chia train/test
-│  ├─ features.py        # feature album / customer / cặp
-│  ├─ models.py          # 5 mô hình, chung fit() / recommend()
-│  └─ evaluate.py        # metric, bootstrap, so sánh
-├─ ui/
-│  ├─ main_window.ui     # thiết kế bằng Qt Designer
-│  └─ main_window.py     # logic giao diện
-├─ artifacts/            # kết quả sinh ra
-├─ tests/
-├─ config.py             # seed, tỉ lệ chia, tham số
-├─ train.py
-├─ main.py
+ChinookRecommender/
+├─ databases/
+│  └─ Chinook_Sqlite.sqlite
+├─ connectors/
+│  └─ connector.py          # mở/đóng kết nối SQLite (dùng with, luôn đóng)
+├─ models/                  # lớp chỉ chứa dữ liệu, không có hành vi
+│  ├─ customer.py           # Customer
+│  ├─ album.py              # Album, Track
+│  └─ recommendation.py     # Recommendation (album, điểm, lý do, track đại diện)
+├─ dal/                     # truy cập dữ liệu
+│  ├─ CustomerDAO.py        # lấy customer, tìm kiếm, lịch sử mua
+│  └─ AlbumDAO.py           # lấy album/track, bảng dữ liệu để làm sạch
+├─ ml/                      # phần học máy, không phụ thuộc Qt
+│  ├─ data_prep.py          # làm sạch, tạo interactions, chia train/test 80/20
+│  ├─ features.py           # feature album / customer / cặp
+│  ├─ recommenders.py       # M1–M5, cùng fit() / recommend()
+│  └─ evaluate.py           # metric, bootstrap, so sánh model
+├─ ui/                      # mỗi màn hình có 3 file
+│  ├─ DataMainWindow.ui / .py / DataMainWindowEx.py
+│  ├─ TrainMainWindow.ui / .py / TrainMainWindowEx.py
+│  ├─ EvaluateMainWindow.ui / .py / EvaluateMainWindowEx.py
+│  └─ RecommendMainWindow.ui / .py / RecommendMainWindowEx.py
+├─ test/                    # mở riêng từng cửa sổ để thử bằng tay
+│  ├─ test_data_window.py
+│  ├─ test_train_window.py
+│  ├─ test_evaluate_window.py
+│  ├─ test_recommend_window.py
+│  └─ test_split_metrics.py # kiểm tra tự động chia dữ liệu và metric
+├─ images/                  # icon
+├─ artifacts/               # model đã train, metrics.csv, biểu đồ
+├─ config.py                # seed, tỉ lệ chia, đường dẫn
+├─ main.py                  # chạy app (mở RecommendMainWindow)
 └─ requirements.txt
 ```
+
+- `ui/`: mỗi màn hình gồm `.ui` (Qt Designer), `.py` (sinh bằng `pyside6-uic`) và `*Ex.py` (logic sự kiện).
+- `dal/`: nơi duy nhất viết SQL. `models/`: lớp dữ liệu thuần. `ml/`: làm sạch, chia dữ liệu, mô hình, đánh giá.
+- `test/`: file mở riêng từng cửa sổ để thử tay, và `test_split_metrics.py` kiểm tra tự động.
 
 ## Phương pháp tóm tắt
 
@@ -91,7 +113,13 @@ chinook-recsys/
 
 ## Chỉnh sửa giao diện
 
-Mở `ui/main_window.ui` bằng Qt Designer (`pyside6-designer`), sửa rồi lưu. App nạp trực tiếp file `.ui` nên không cần biên dịch lại.
+Mở file `.ui` trong `ui/` bằng Qt Designer (`pyside6-designer`), sửa rồi lưu, sau đó sinh lại file `.py`:
+
+```bash
+pyside6-uic ui/RecommendMainWindow.ui -o ui/RecommendMainWindow.py
+```
+
+Không sửa tay file `.py` sinh tự động; logic viết trong `*Ex.py`.
 
 ## Hạn chế
 
