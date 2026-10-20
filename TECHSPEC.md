@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Phiên bản | 1.0 |
+| Phiên bản | 1.3 |
 | Ngày | 2026-10-20 |
 | Loại dự án | Bài tập môn Học máy |
 | Ngôn ngữ / UI | Python 3.11+, PySide6 + Qt Designer (`.ui`), giao diện tiếng Việt |
@@ -60,7 +60,7 @@ Baseline thăm dò (Recall@10, album, chia theo thời gian): Popularity 5,3% ·
 | FR-07 | Gợi ý Top-K album cho 1 customer (loại album đã mua), kèm track đại diện và lý do |
 | FR-08 | Xử lý customer mới (cold-start): gợi ý theo popularity của quốc gia / genre chọn tay |
 | FR-09 | So sánh nhiều mô hình trên cùng bảng/biểu đồ |
-| FR-10 | Lưu/nạp mô hình đã train và xuất kết quả đánh giá (CSV) |
+| FR-10 | Lưu mô hình đã train (`.joblib`) cùng tên feature/thứ tự cột; nạp lại để gợi ý mà không train lại; xuất kết quả đánh giá (CSV) |
 
 ### 3.2 Phi chức năng
 
@@ -70,7 +70,7 @@ Baseline thăm dò (Recall@10, album, chia theo thời gian): Popularity 5,3% ·
 | NFR-02 | **Không rò rỉ dữ liệu:** mọi thống kê (popularity, profile, feature) chỉ tính từ train |
 | NFR-03 | Train toàn bộ < 2 phút; gợi ý 1 customer < 1 giây |
 | NFR-04 | UI không treo khi train (dùng `QThread`) |
-| NFR-05 | Code ML không phụ thuộc Qt (để test độc lập) |
+| NFR-05 | Code ML không phụ thuộc Qt (có thể chạy bằng dòng lệnh `python -m ml.train`) |
 
 ---
 
@@ -154,21 +154,24 @@ ChinookRecommender/
 │  ├─ data_prep.py          # làm sạch, tạo interactions, chia train/test 80/20
 │  ├─ features.py           # feature album / customer / cặp
 │  ├─ recommenders.py       # M1–M5, cùng fit() / recommend()
+│  ├─ train.py              # HUẤN LUYỆN: làm sạch → chia → fit → đánh giá → lưu model
+│  ├─ predict.py            # SUY LUẬN: nạp model đã lưu và gợi ý (không train lại)
 │  └─ evaluate.py           # metric, bootstrap, so sánh model
 ├─ ui/                      # mỗi màn hình có 3 file
 │  ├─ DataMainWindow.ui / .py / DataMainWindowEx.py
 │  ├─ TrainMainWindow.ui / .py / TrainMainWindowEx.py
 │  ├─ EvaluateMainWindow.ui / .py / EvaluateMainWindowEx.py
-│  └─ RecommendMainWindow.ui / .py / RecommendMainWindowEx.py
-├─ test/                    # mở riêng từng cửa sổ để thử bằng tay
-│  ├─ test_data_window.py
-│  ├─ test_train_window.py
-│  ├─ test_evaluate_window.py
-│  ├─ test_recommend_window.py
-│  └─ test_split_metrics.py # kiểm tra tự động chia dữ liệu và metric
+│  ├─ RecommendMainWindow.ui / .py / RecommendMainWindowEx.py
+│  └─ utils.py              # hàm dùng chung: showDataIntoTableWidget, vẽ biểu đồ
+├─ test/                    # mở file nào là xem được giao diện và chạy được mô hình
+│  ├─ test_app.py           # mở toàn bộ ứng dụng (4 màn hình)
+│  ├─ test_data_window.py   # mở màn Dữ liệu
+│  ├─ test_train_window.py  # mở màn Huấn luyện
+│  ├─ test_evaluate_window.py # mở màn Đánh giá
+│  └─ test_recommend_window.py # mở màn Gợi ý
 ├─ images/                  # icon
-├─ artifacts/               # model đã train, metrics.csv, biểu đồ
-├─ config.py                # seed, tỉ lệ chia, đường dẫn
+├─ artifacts/               # recommender.joblib, metrics.csv, biểu đồ
+├─ config.py                # seed, tỉ lệ chia, đường dẫn (Path(__file__).parent)
 ├─ main.py                  # chạy app (mở RecommendMainWindow)
 └─ requirements.txt
 ```
@@ -180,16 +183,89 @@ ChinookRecommender/
 | `ui/` | `.ui` thiết kế bằng Qt Designer; `.py` sinh tự động bằng `pyside6-uic`; `*Ex.py` chứa logic gắn sự kiện, kế thừa lớp sinh tự động |
 | `dal/` | Chỉ nơi này viết SQL; luôn dùng truy vấn tham số hóa (`?`) |
 | `models/` | Lớp dữ liệu thuần (dataclass) |
-| `ml/` | Làm sạch, chia dữ liệu, feature, mô hình, đánh giá; trả về pandas/dataclass cho UI |
-| `test/` | Các file mở cửa sổ thử tay, thêm một file kiểm tra tự động cho chia dữ liệu và metric |
-
-**Quy ước tránh lỗi thường gặp**
-- Luôn chạy từ thư mục gốc (`python main.py`); import dùng đường dẫn tính từ gốc dự án.
-- Kết nối SQLite mở bằng `with`/`try-finally` để không rò rỉ.
-- Đường dẫn database lấy từ `config.py`, không hard-code trong từng file.
-- Tên cột thống nhất theo schema Chinook (`CustomerId`, `AlbumId`, `TrackId`, `InvoiceDate`...).
+| `ml/` | Làm sạch, chia dữ liệu, feature, mô hình, đánh giá; `train.py` và `predict.py` tách riêng; trả về pandas/dataclass cho UI |
+| `test/` | Các file khởi chạy: mở lên là thấy giao diện và chạy được mô hình (không phải unit test) |
 
 Giao diện thống nhất của mô hình: `fit(train)`, `recommend(customer_id, k, exclude)`.
+
+---
+
+## 8.1 Quy tắc lập trình bắt buộc
+
+### A. Quy tắc làm mô hình máy học
+
+1. **Khám phá dữ liệu trước khi train:** in `head()`, `info()`, `describe()`, đếm giá trị thiếu và kiểu dữ liệu (ghi vào báo cáo làm sạch).
+2. **Định nghĩa feature tường minh ở một chỗ** (`FEATURE_COLUMNS` trong `ml/features.py`). Không đưa cột văn bản thô (tên album, composer thô) vào mô hình số; phải mã hóa (TF-IDF, one-hot, đếm) trước.
+3. **Chia train/test trước khi fit**, seed cố định (`SEED = 42` trong `config.py`) để kết quả tái lập.
+4. **Chỉ đánh giá trên tập test** (validation chỉ để chọn tham số). Không bao giờ báo cáo chỉ số tính trên train.
+5. **Báo cáo chỉ số, không chỉ in danh sách gợi ý:** Recall@K, NDCG@K... kèm CI. Với mô hình LightGBM, kèm feature importance; với mô hình profile, kèm điểm thành phần để giải thích.
+6. **Lưu model kèm tên feature và thứ tự cột.** Khi dự đoán, kiểm tra thứ tự cột khớp lúc train; sai thì báo lỗi rõ.
+7. **Tách training và inference thành hai file:** `ml/train.py` và `ml/predict.py`. Inference chỉ nạp `artifacts/recommender.joblib`, không phụ thuộc việc train lại.
+8. **Đường dẫn dùng `Path(__file__).parent`** (gom trong `config.py`), không dùng đường dẫn tương đối theo thư mục chạy.
+9. **Đuôi file model là `.joblib`** (không đặt `.zip`/`.pkl` gây hiểu nhầm). Chỉ nạp file do chính dự án tạo ra, vì pickle/joblib có thể chạy code tùy ý.
+10. **Dùng `logging`** (không dùng `print`) cho tiến trình train, số dòng bị loại khi làm sạch, kết quả đánh giá; UI hiển thị log qua signal.
+11. **Ngôn ngữ nhất quán:** chuỗi giao diện và thông báo hoàn toàn tiếng Việt; tên biến/hàm/class tiếng Anh; comment tiếng Việt có dấu.
+
+### B. Quy tắc giao diện
+
+1. **Tách thiết kế và logic:** `XxxMainWindow.ui` (Qt Designer) → `XxxMainWindow.py` (sinh tự động bằng `pyside6-uic`, **không sửa tay**) → `XxxMainWindowEx.py` (kế thừa `Ui_MainWindow`, chứa mọi xử lý sự kiện).
+2. **Khởi tạo đúng thứ tự:** `__init__` → `setupUi(MainWindow)` → `setupSignalAndSlot()` → `showWindow()`. Mọi `connect(...)` gom trong `setupSignalAndSlot()`.
+3. **Bắt lỗi và báo bằng hộp thoại:** hàm xử lý sự kiện bọc `try/except`, dùng `QMessageBox.critical` (lỗi hệ thống/DB/train) hoặc `warning` (nhập sai). Tiêu đề ngắn, tiếng Việt: "Lỗi dữ liệu", "Thông báo", "Lỗi biểu đồ".
+4. **Kiểm tra đầu vào trước khi xử lý:** chưa chọn customer, chưa làm sạch, chưa train, K không hợp lệ... thì cảnh báo và dừng, không chạy với dữ liệu rỗng.
+5. **Logic dữ liệu nằm ở DAO/`ml/`, không nằm trong UI.** UI chỉ gọi hàm rồi hiển thị. DAO dùng `@staticmethod` và trả về `DataFrame`.
+6. **Một hàm hiển thị bảng dùng chung:** `showDataIntoTableWidget(table, df)` trong `ui/utils.py`, mọi màn hình dùng lại, không viết lặp.
+7. **Kết nối gói trong `ensureConnection()`** (ở `connectors/connector.py`): kiểm tra còn dùng được trước mỗi truy vấn, mở lại nếu cần; mỗi DAO không tự mở kết nối riêng rải rác, và luôn đóng bằng `with`/`finally`.
+8. **Biểu đồ nhúng Qt bằng `FigureCanvasQTAgg` + `NavigationToolbar2QT`.** Mỗi lần vẽ lại: `figure.clear()` → vẽ → `tight_layout()` → `canvas.draw()`.
+9. **SQL luôn dùng placeholder** (`?` với SQLite) và truyền tham số qua `execute(sql, params)`; không nối chuỗi/f-string vào câu SQL.
+10. **Tác vụ nặng (train, đánh giá) chạy trong `QThread`/worker**, khóa nút khi đang chạy, mở lại khi xong hoặc lỗi.
+
+### C. Quy tắc kiểm tra
+
+1. Thư mục `test/` chỉ chứa các file **khởi chạy giao diện** (xem §8.2), không viết unit test riêng.
+2. Việc chống rò rỉ dữ liệu và kiểm tra chia train/test được **kiểm tra ngay trong code** (`assert` và log trong `ml/data_prep.py`: không album test nào nằm trong train, mỗi customer có đủ train và test), và kết quả hiện ở màn Dữ liệu.
+
+---
+
+## 8.2 Yêu cầu: thư mục `test/` mở lên là xem được giao diện và chạy được mô hình
+
+`test/` là nơi giảng viên mở file bất kỳ (bằng IDE rồi bấm Run, hoặc `python test/test_xxx.py` từ thư mục nào cũng được) để **thấy ngay giao diện và chạy mô hình**, không cần chuẩn bị gì thêm. Không có test thủ công hay unit test riêng.
+
+| File | Mở lên là |
+|---|---|
+| `test_app.py` | Toàn bộ ứng dụng: điều hướng giữa 4 màn hình, chạy được cả quy trình làm sạch → train → đánh giá → gợi ý |
+| `test_data_window.py` | Màn Dữ liệu: đã nạp database, bấm "Làm sạch" là có báo cáo |
+| `test_train_window.py` | Màn Huấn luyện: bấm Train là chạy mô hình, có thanh tiến độ và log |
+| `test_evaluate_window.py` | Màn Đánh giá: bảng và biểu đồ so sánh mô hình, bấm "Đánh giá" để chạy lại |
+| `test_recommend_window.py` | Màn Gợi ý: chọn customer, bấm Gợi ý là có Top-K album và track |
+
+**Quy tắc đảm bảo**
+
+1. **Tự định vị thư mục gốc:** đầu mỗi file có đoạn `Path(__file__)` thêm gốc dự án vào `sys.path`, nên chạy từ đâu cũng import được `ui`, `dal`, `ml`, `models`, `connectors`:
+
+```python
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, ROOT.as_posix())
+
+from PySide6.QtWidgets import QApplication, QMainWindow
+from ui.RecommendMainWindowEx import RecommendMainWindowEx
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = QMainWindow()
+    ui = RecommendMainWindowEx()
+    ui.setupUi(window)
+    ui.showWindow()
+    sys.exit(app.exec())
+```
+
+2. **Đi kèm sẵn dữ liệu và model:** `databases/Chinook_Sqlite.sqlite`, `artifacts/recommender.joblib`, `artifacts/metrics.csv` nằm trong bài nộp để màn Đánh giá và Gợi ý có dữ liệu ngay khi mở. Nếu thiếu model, chương trình tự huấn luyện nhanh (dưới 1 phút) và ghi log.
+3. **Chạy được mô hình ngay trong giao diện:** màn nào cũng có nút hành động rõ ràng (Làm sạch, Train, Đánh giá, Gợi ý); giá trị mặc định đã điền sẵn (customer đầu tiên, K=10, mô hình tốt nhất), bấm nút là chạy, không cần nhập tham số.
+4. **Thiếu điều kiện tiên quyết thì tự xử lý hoặc hướng dẫn:** ví dụ chưa làm sạch thì tự làm sạch, hoặc hiện `QMessageBox` tiếng Việt chỉ rõ bước cần làm; không để văng traceback.
+5. **Chỉ phụ thuộc thư viện trong `requirements.txt`**; thiếu thư viện thì in đúng lệnh `pip install -r requirements.txt`.
+6. **Checklist trước khi nộp:** trong môi trường ảo mới, chỉ cài `requirements.txt`, rồi từ một thư mục khác mở lần lượt cả 5 file trong `test/`; cả 5 phải hiện giao diện và bấm nút chạy được mô hình, không lỗi import hay lỗi đường dẫn.
 
 ---
 
@@ -204,7 +280,7 @@ Giao diện thống nhất của mô hình: `fit(train)`, `recommend(customer_id
 | **3. Đánh giá** (`EvaluateMainWindow`) | Bảng metric của các mô hình đã train (kèm CI); biểu đồ cột so sánh; chọn K; nút xuất CSV |
 | **4. Gợi ý** (`RecommendMainWindow`) | Chọn customer (có ô tìm kiếm) hoặc "Customer mới" (chọn quốc gia/genre); chọn mô hình và K; bảng Top-K album (artist, genre, điểm, lý do); chọn album → danh sách track đại diện; bên cạnh là lịch sử mua và biểu đồ genre của customer |
 
-Biểu đồ dùng matplotlib nhúng Qt (`FigureCanvasQTAgg`). Thông báo lỗi bằng `QMessageBox`; các nút bị khóa khi chưa đủ điều kiện (ví dụ chưa làm sạch thì chưa train được).
+Biểu đồ, thông báo lỗi, kiểm tra đầu vào và khóa nút tuân theo §8.1-B. Ví dụ: chưa làm sạch thì chưa train được; chưa train thì chưa đánh giá/gợi ý được.
 
 ---
 
@@ -212,13 +288,13 @@ Biểu đồ dùng matplotlib nhúng Qt (`FigureCanvasQTAgg`). Thông báo lỗi
 
 | Giai đoạn | Nội dung | Kết quả |
 |---|---|---|
-| 1 | `ml/data_prep.py`: làm sạch, interactions, chia 80/20 + test | Dữ liệu sạch, báo cáo làm sạch |
+| 1 | `ml/data_prep.py`: làm sạch, interactions, chia 80/20 + kiểm tra rò rỉ bằng `assert` | Dữ liệu sạch, báo cáo làm sạch |
 | 2 | `ml/evaluate.py` + baseline M1–M3 | Bảng baseline có CI |
-| 3 | `ml/features.py` + M4, M5, tuning | Mô hình chính, phân tích lỗi |
+| 3 | `ml/features.py` + M4, M5, `ml/train.py`/`ml/predict.py`, tuning | Mô hình chính, phân tích lỗi |
 | 4 | Thiết kế 4 file `.ui` + `*Ex.py` nối chức năng | App chạy đủ 4 màn hình |
-| 5 | Kiểm thử, viết báo cáo ngắn (kết quả, hạn chế) | Mã nguồn + báo cáo |
+| 5 | Rà soát theo §8.1, chạy checklist §8.2, viết báo cáo ngắn (kết quả, hạn chế) | Mã nguồn + báo cáo |
 
-**Bàn giao:** mã nguồn, `requirements.txt`, file `.ui`, `metrics.csv` và biểu đồ, hướng dẫn chạy ngắn.
+**Bàn giao:** mã nguồn, `databases/Chinook_Sqlite.sqlite`, `artifacts/recommender.joblib`, `requirements.txt`, file `.ui` (và `.py` sinh ra), `metrics.csv` và biểu đồ, hướng dẫn chạy ngắn.
 
 ---
 
@@ -228,7 +304,7 @@ Biểu đồ dùng matplotlib nhúng Qt (`FigureCanvasQTAgg`). Thông báo lỗi
 |---|---|
 | Dữ liệu nhỏ → kết quả dao động | CI bootstrap, nhiều seed, so sánh paired |
 | Mô hình không thắng M3 | Chấp nhận và phân tích; ghi vào báo cáo |
-| Rò rỉ dữ liệu | Thống kê chỉ trên train; có test tự động |
+| Rò rỉ dữ liệu | Thống kê chỉ trên train; có `assert` kiểm tra ngay trong `data_prep.py` |
 | Overfit khi tune | Validation tách riêng, ít tham số |
 | Chinook là dữ liệu tổng hợp | Nêu rõ trong phần hạn chế của báo cáo |
 
@@ -241,3 +317,5 @@ Biểu đồ dùng matplotlib nhúng Qt (`FigureCanvasQTAgg`). Thông báo lỗi
 - Mô hình: classical ML + hybrid, không deep learning.
 - UI: Qt Designer + PySide6, tiếng Việt, cấu trúc `ui / dal / models / ml / test`, mỗi màn hình 3 file (`.ui`, `.py`, `*Ex.py`).
 - Không đóng gói .exe; không gợi ý track độc lập.
+- Tuân theo bộ quy tắc ở §8.1 (ML, giao diện, kiểm thử).
+- Thư mục `test/` chỉ chứa file khởi chạy: mở ra là xem được giao diện và chạy được mô hình (§8.2); bài nộp kèm sẵn database và model đã train.
