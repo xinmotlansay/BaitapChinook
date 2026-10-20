@@ -1,17 +1,15 @@
 # Hệ gợi ý Album & Track cho Customer (Chinook)
 
-Bài tập môn Học máy: gợi ý Top-K **album** (kèm **track đại diện**) cho từng customer dựa trên lịch sử mua trong database Chinook. Dự án có đủ quy trình làm sạch dữ liệu, chia train/test 80/20, huấn luyện và so sánh mô hình, đánh giá, và giao diện desktop bằng Qt.
+Bài tập môn Học máy: gợi ý Top-K **album** cho từng customer dựa trên lịch sử mua trong database Chinook, kèm **track** được dự đoán trong từng album. Mô hình được huấn luyện offline; ứng dụng desktop (PySide6) chỉ nạp model đã đóng gói để gợi ý.
 
-> Trạng thái: đang phát triển. Tài liệu thiết kế chi tiết nằm trong [`TECHSPEC.md`](TECHSPEC.md).
+Chi tiết thiết kế, mô hình và đánh giá nằm trong [`TECHSPEC.md`](TECHSPEC.md).
 
 ## Tính năng
 
-- Đọc và làm sạch dữ liệu từ file SQLite, có báo cáo làm sạch
-- Chia train/test 80/20 theo thời gian của từng customer (không rò rỉ dữ liệu)
-- 5 mô hình: Popularity, Genre-profile, Artist+Genre profile, Content-based, Hybrid LightGBM Ranker
-- Đánh giá bằng Recall@K, Precision@K, NDCG@K, MAP@K, HitRate@K, Coverage, Diversity, kèm khoảng tin cậy 95%
-- Giao diện Qt (tiếng Việt) với 4 màn hình: Dữ liệu, Huấn luyện, Đánh giá, Gợi ý
-- Gợi ý cho customer mới (cold-start) theo quốc gia hoặc genre
+- Gợi ý Top-K album cho **khách hàng đã có**, chọn mô hình album (M1–M5)
+- Gợi ý cho **khách hàng mới** theo quốc gia và nhiều thể loại (theo độ phổ biến)
+- Với mỗi album: lý do gợi ý và **danh sách track chưa mua, xếp theo mức phù hợp** (mô hình T2)
+- Lịch sử mua trong popup, biểu đồ số lượt mua theo thể loại
 
 ## Về dữ liệu
 
@@ -20,19 +18,17 @@ Chinook là dữ liệu cửa hàng nhạc nhỏ và thưa:
 | | |
 |---|---|
 | Customer / Album / Track | 59 / 347 / 3.503 |
-| Lượt mua | 2.240 (mỗi dòng `Quantity = 1`) |
+| Lượt mua (dòng hóa đơn) | 2.240 (mỗi dòng `Quantity = 1`) |
 | Mỗi customer | khoảng 38 track, 22 album |
 | Track chỉ có 1 người mua | 1.728 / 1.984 |
 
-Vì rất ít customer mua trùng track, collaborative filtering gần như không dùng được. Dự án vì thế gợi ý **album** bằng content-based và hybrid (genre, artist, composer, popularity). Kết quả được kỳ vọng ở mức khiêm tốn; điều quan trọng là so sánh công bằng với baseline và kết luận trung thực.
+Vì rất ít customer mua trùng track, collaborative filtering gần như không dùng được. Dự án vì thế dùng content-based và hybrid (thể loại, nghệ sĩ, nhạc sĩ, độ phổ biến). Kết quả được kỳ vọng ở mức khiêm tốn; điều quan trọng là so sánh công bằng với baseline và kết luận trung thực.
 
 ## Cài đặt
 
-Yêu cầu: Python 3.11+.
+Yêu cầu: Python 3.11+ (dự án đang chạy trên 3.12).
 
 ```bash
-git clone <repo-url>
-cd chinook-recsys
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
@@ -44,90 +40,94 @@ Thư viện chính: pandas, numpy, scikit-learn, lightgbm, matplotlib, PySide6.
 
 ## Cách chạy
 
-**Giao diện:**
+**1. Huấn luyện (chạy một lần, hoặc khi đổi dữ liệu / code feature):**
+
+```bash
+python -m ml.train
+```
+
+Lệnh này làm sạch dữ liệu, chia train/test, chọn tham số trên validation, huấn luyện và đánh giá, rồi ghi:
+
+- `models/recommender.zip`: model đã đóng gói (dùng cho UI và dòng lệnh)
+- `artifacts/`: `metrics.csv`, `track_metrics.csv`, `paired_vs_m3.csv`, `m5_seeds.csv`, `m5_tuning.csv`, `track_tuning.csv`
+
+Thời gian chạy khoảng 15–45 giây.
+
+**2. Giao diện:**
 
 ```bash
 python main.py
 ```
 
-Thứ tự dùng: màn hình *Dữ liệu* (chọn file, làm sạch) → *Huấn luyện* (chọn mô hình, Train) → *Đánh giá* (xem bảng/biểu đồ so sánh) → *Gợi ý* (chọn customer, xem Top-K album và track).
+Nếu chưa có `models/recommender.zip`, ứng dụng tự huấn luyện lần đầu (khoảng 10–45 giây).
 
-**Cách nhanh nhất:** mở thư mục `test/`, chọn `test_app.py` (toàn bộ ứng dụng) hoặc file của từng màn hình (ví dụ `test_recommend_window.py`) rồi bấm Run trong IDE, hoặc `python test/test_app.py` từ bất kỳ thư mục nào. Bài nộp đã kèm sẵn database và model đã train nên chỉ cần `pip install -r requirements.txt`.
+Cách dùng:
+- Tab **Khách hàng đã có**: chọn khách, chọn mô hình album, chọn K, bấm **Gợi ý**.
+- Tab **Khách hàng mới**: chọn quốc gia (không bắt buộc) và đánh dấu một hoặc nhiều thể loại trong ô xổ xuống, rồi bấm **Gợi ý**.
+- Bấm một dòng trong bảng album để xem các track chưa mua của album đó.
+- Bấm **Xem lịch sử mua** để mở lịch sử đầy đủ trong popup.
 
-**Không cần giao diện:** huấn luyện bằng `python -m ml.train`; dự đoán từ model đã lưu bằng `python -m ml.predict --customer 5 --k 10`.
+**3. Dòng lệnh:**
 
-Kết quả (model, `metrics.csv`, biểu đồ) lưu trong `artifacts/`.
+```bash
+python -m ml.predict --customer 5 --k 10
+python -m ml.predict --customer 5 --k 10 --model M3
+```
+
+**4. Chạy thử giao diện từ IDE:** mở `test/run_app.py` rồi bấm Run, hoặc chạy `python test/run_app.py` từ thư mục bất kỳ.
 
 ## Cấu trúc thư mục
 
 ```
-ChinookRecommender/
+BaitapChinook/
 ├─ databases/
-│  └─ Chinook_Sqlite.sqlite
+│  └─ Chinook_Sqlite.sqlite      # dữ liệu gốc (chỉ đọc)
 ├─ connectors/
-│  └─ connector.py          # mở/đóng kết nối SQLite (dùng with, luôn đóng)
-├─ models/                  # lớp chỉ chứa dữ liệu, không có hành vi
-│  ├─ customer.py           # Customer
-│  ├─ album.py              # Album, Track
-│  └─ recommendation.py     # Recommendation (album, điểm, lý do, track đại diện)
-├─ dal/                     # truy cập dữ liệu
-│  ├─ CustomerDAO.py        # lấy customer, tìm kiếm, lịch sử mua
-│  └─ AlbumDAO.py           # lấy album/track, bảng dữ liệu để làm sạch
-├─ ml/                      # phần học máy, không phụ thuộc Qt
-│  ├─ data_prep.py          # làm sạch, tạo interactions, chia train/test 80/20
-│  ├─ features.py           # feature album / customer / cặp
-│  ├─ recommenders.py       # M1–M5, cùng fit() / recommend()
-│  ├─ train.py              # HUẤN LUYỆN: làm sạch → chia → fit → đánh giá → lưu model
-│  ├─ predict.py            # SUY LUẬN: nạp model đã lưu và gợi ý (không train lại)
-│  └─ evaluate.py           # metric, bootstrap, so sánh model
-├─ ui/                      # mỗi màn hình có 3 file
-│  ├─ DataMainWindow.ui / .py / DataMainWindowEx.py
-│  ├─ TrainMainWindow.ui / .py / TrainMainWindowEx.py
-│  ├─ EvaluateMainWindow.ui / .py / EvaluateMainWindowEx.py
-│  ├─ RecommendMainWindow.ui / .py / RecommendMainWindowEx.py
-│  └─ utils.py              # hàm dùng chung: showDataIntoTableWidget, vẽ biểu đồ
-├─ test/                    # mở file nào là xem được giao diện và chạy được mô hình
-│  ├─ test_app.py           # mở toàn bộ ứng dụng (4 màn hình)
-│  ├─ test_data_window.py   # mở màn Dữ liệu
-│  ├─ test_train_window.py  # mở màn Huấn luyện
-│  ├─ test_evaluate_window.py # mở màn Đánh giá
-│  └─ test_recommend_window.py # mở màn Gợi ý
-├─ images/                  # icon
-├─ artifacts/               # recommender.joblib, metrics.csv, biểu đồ
-├─ config.py                # seed, tỉ lệ chia, đường dẫn (Path(__file__).parent)
-├─ main.py                  # chạy app (mở RecommendMainWindow)
-└─ requirements.txt
+│  └─ connector.py               # kết nối SQLite dùng chung
+├─ models/                       # lớp dữ liệu thuần, không có hành vi
+│  ├─ customer.py
+│  ├─ album.py                   # Album, Track
+│  ├─ recommendation.py          # Recommendation (album, điểm, lý do, track kèm điểm)
+│  └─ recommender.zip            # model đã đóng gói (tạo bởi ml.train)
+├─ dal/                          # truy cập dữ liệu, chỉ nơi này viết SQL
+│  ├─ CustomerDAO.py
+│  └─ AlbumDAO.py
+├─ ml/                           # học máy, không phụ thuộc Qt
+│  ├─ data_prep.py               # làm sạch, tương tác customer-album và customer-track, chia cửa sổ
+│  ├─ features.py                # ProfileState: thống kê và feature (album và track)
+│  ├─ recommenders.py            # M1–M5, T1–T2, hàm huấn luyện LambdaRank
+│  ├─ evaluate.py                # metric, bootstrap CI, so sánh cặp
+│  ├─ train.py                   # HUẤN LUYỆN
+│  ├─ predict.py                 # SUY LUẬN: nạp model, gợi ý (không train lại)
+│  └─ package.py                 # đóng gói / nạp model (zip + pickle)
+├─ ui/
+│  ├─ RecommendMainWindow.ui     # thiết kế giao diện (Qt Designer)
+│  ├─ RecommendMainWindow.py     # sinh tự động bằng pyside6-uic, không sửa tay
+│  ├─ RecommendMainWindowEx.py   # logic sự kiện
+│  ├─ HistoryDialog.py           # popup lịch sử mua
+│  ├─ widgets.py                 # CheckComboBox: ô xổ xuống chọn nhiều
+│  └─ utils.py                   # bảng dùng chung, biểu đồ, thanh mức phù hợp
+├─ test/
+│  └─ run_app.py                 # mở ứng dụng
+├─ artifacts/                    # kết quả huấn luyện (CSV)
+├─ config.py                     # đường dẫn, seed, tỉ lệ chia, số mẫu âm
+├─ main.py                       # chạy ứng dụng
+├─ requirements.txt
+├─ README.md
+└─ TECHSPEC.md
 ```
 
-- `ui/`: mỗi màn hình gồm `.ui` (Qt Designer), `.py` (sinh bằng `pyside6-uic`) và `*Ex.py` (logic sự kiện).
-- `dal/`: nơi duy nhất viết SQL. `models/`: lớp dữ liệu thuần. `ml/`: làm sạch, chia dữ liệu, mô hình, đánh giá.
-- `test/`: file khởi chạy. Mở file nào cũng thấy giao diện và chạy được mô hình ngay (không phải unit test).
+## Lưu ý về model
 
-## Quy tắc code
+- File `models/recommender.zip` chứa pickle. **Chỉ nạp file do chính dự án tạo ra**, vì pickle có thể chạy code tùy ý khi nạp.
+- Model được tạo khi huấn luyện. Nếu bạn đổi code feature hoặc thêm dữ liệu vào database, cần chạy lại `python -m ml.train`.
+- Điểm gợi ý dựa trên lịch sử train (80% album đầu của mỗi customer). Lịch sử mua trong database vẫn được dùng để loại album/track đã mua và để hiển thị.
 
-Dự án tuân theo bộ quy tắc ở `TECHSPEC.md` §8.1: train và inference tách file (`ml/train.py`, `ml/predict.py`), model lưu `.joblib` kèm tên feature, đường dẫn tính bằng `Path(__file__)`, SQL dùng placeholder, UI tách `.ui` / `.py` sinh tự động / `*Ex.py`, lỗi báo bằng `QMessageBox`, chuỗi giao diện hoàn toàn tiếng Việt.
-
-## Phương pháp tóm tắt
-
-- **Bài toán:** Top-K recommendation với implicit feedback (đã mua = 1); ứng viên là album customer chưa mua.
-- **Chia dữ liệu:** với mỗi customer, 80% album mua trước → train, 20% album mua sau → test; validation cắt từ train để chọn tham số.
-- **Chống rò rỉ:** popularity, profile và feature chỉ tính từ tập train.
-- **Đánh giá:** NDCG@10 và Recall@10 là chính; bootstrap theo customer để có khoảng tin cậy; so sánh với baseline Artist+Genre.
-
-## Chỉnh sửa giao diện
-
-Mở file `.ui` trong `ui/` bằng Qt Designer (`pyside6-designer`), sửa rồi lưu, sau đó sinh lại file `.py`:
-
-```bash
-pyside6-uic ui/RecommendMainWindow.ui -o ui/RecommendMainWindow.py
-```
-
-Không sửa tay file `.py` sinh tự động; logic viết trong `*Ex.py`.
-
-## Hạn chế
+## Giới hạn
 
 - Chỉ 59 customer nên kết quả dao động mạnh; luôn xem kèm khoảng tin cậy.
-- Chinook là dữ liệu tổng hợp, ít cấu trúc sở thích thật như dữ liệu nghe nhạc thực tế.
+- Track gần như không dự đoán được (Recall@10 khoảng 1,6%).
+- Chinook là dữ liệu mẫu, ít cấu trúc sở thích thật như dữ liệu nghe nhạc thực tế.
 - Không có rating hay lượt nghe, chỉ có lịch sử mua.
 
 ## Giấy phép & dữ liệu

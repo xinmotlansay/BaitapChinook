@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1280</width>
+    <height>800</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Gợi ý album cho khách hàng</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="verticalLayoutMain">
+    <item>
+     <layout class="QHBoxLayout" name="horizontalLayoutTop">
+      <item>
+       <widget class="QTabWidget" name="tabCustomer">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Maximum">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>170</height>
+         </size>
+        </property>
+        <property name="currentIndex">
+         <number>0</number>
+        </property>
+        <widget class="QWidget" name="tabExisting">
+         <attribute name="title">
+          <string>Khách hàng đã có</string>
+         </attribute>
+         <layout class="QGridLayout" name="gridLayoutExisting">
+          <item row="0" column="0">
+           <widget class="QLabel" name="lblCustomerTitle">
+            <property name="text">
+             <string>Khách hàng</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLabel" name="lblSearchTitle">
+            <property name="text">
+             <string>Tìm kiếm</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="2">
+           <widget class="QLabel" name="lblModelTitle">
+            <property name="text">
+             <string>Mô hình album</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QComboBox" name="cbCustomer"/>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLineEdit" name="txtSearch">
+            <property name="placeholderText">
+             <string>Nhập tên hoặc mã khách hàng</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="2">
+           <widget class="QComboBox" name="cbModel"/>
+          </item>
+          <item row="2" column="0" colspan="3">
+           <spacer name="verticalSpacerExisting">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QWidget" name="tabNew">
+         <attribute name="title">
+          <string>Khách hàng mới</string>
+         </attribute>
+         <layout class="QHBoxLayout" name="horizontalLayoutNew">
+          <item>
+           <widget class="QGroupBox" name="groupCountry">
+            <property name="title">
+             <string>Quốc gia</string>
+            </property>
+            <layout class="QVBoxLayout" name="verticalLayoutCountry">
+             <item>
+              <widget class="QComboBox" name="cbCountry"/>
+             </item>
+             <item>
+              <widget class="QLabel" name="lblNewHint">
+               <property name="wordWrap">
+                <bool>true</bool>
+               </property>
+               <property name="text">
+                <string>Gợi ý theo độ phổ biến, không cá nhân hóa.</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="verticalSpacerNew">
+               <property name="orientation">
+                <enum>Qt::Vertical</enum>
+               </property>
+              </spacer>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="groupGenres">
+            <property name="title">
+             <string>Thể loại yêu thích (chọn nhiều)</string>
+            </property>
+            <layout class="QVBoxLayout" name="verticalLayoutGenres">
+             <item>
+              <widget class="CheckComboBox" name="cbGenres"/>
+             </item>
+             <item>
+              <layout class="QHBoxLayout" name="horizontalLayoutGenreButtons">
+               <item>
+                <widget class="QPushButton" name="btnSelectAllGenres">
+                 <property name="text">
+                  <string>Chọn tất cả</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="btnClearGenres">
+                 <property name="text">
+                  <string>Xóa hết</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <spacer name="horizontalSpacerGenres">
+                 <property name="orientation">
+                  <enum>Qt::Horizontal</enum>
+                 </property>
+                </spacer>
+               </item>
+              </layout>
+             </item>
+             <item>
+              <spacer name="verticalSpacerGenres">
+               <property name="orientation">
+                <enum>Qt::Vertical</enum>
+               </property>
+              </spacer>
+             </item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </widget>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="verticalLayoutButton">
+        <item>
+         <widget class="QLabel" name="lblKTitle">
+          <property name="text">
+           <string>Số album (K)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="spinK">
+          <property name="minimum">
+           <number>1</number>
+          </property>
+          <property name="maximum">
+           <number>20</number>
+          </property>
+          <property name="value">
+           <number>10</number>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnRecommend">
+          <property name="text">
+           <string>Gợi ý</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="verticalSpacerButton">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <layout class="QVBoxLayout" name="verticalLayoutResults">
+      <item>
+       <widget class="QLabel" name="lblRecommendTitle">
+        <property name="text">
+         <string>Top-K album gợi ý</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QTableWidget" name="tableRecommend"/>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayoutBottom">
+        <item>
+         <layout class="QVBoxLayout" name="verticalLayoutLeft">
+          <item>
+           <widget class="QLabel" name="lblTracksTitle">
+            <property name="text">
+             <string>Track của album đã chọn</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QTableWidget" name="tableTracks"/>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QVBoxLayout" name="verticalLayoutRight">
+          <item>
+           <widget class="QPushButton" name="btnHistory">
+            <property name="text">
+             <string>Xem lịch sử mua</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lblChartTitle">
+            <property name="text">
+             <string>Thể loại đã mua</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QWidget" name="chartHost" native="true">
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>150</height>
+             </size>
+            </property>
+            <layout class="QVBoxLayout" name="verticalLayoutChart"/>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <widget class="QLabel" name="lblStatus">
+      <property name="text">
+       <string/>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>CheckComboBox</class>
+   <extends>QComboBox</extends>
+   <header>ui.widgets</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>
