@@ -52,13 +52,9 @@ python main.py
 
 Thứ tự dùng: màn hình *Dữ liệu* (chọn file, làm sạch) → *Huấn luyện* (chọn mô hình, Train) → *Đánh giá* (xem bảng/biểu đồ so sánh) → *Gợi ý* (chọn customer, xem Top-K album và track).
 
-Luôn chạy từ thư mục gốc dự án. Để thử riêng một màn hình: `python -m test.test_recommend_window` (tương tự cho các màn khác).
+**Cách nhanh nhất:** mở thư mục `test/`, chọn `test_app.py` (toàn bộ ứng dụng) hoặc file của từng màn hình (ví dụ `test_recommend_window.py`) rồi bấm Run trong IDE, hoặc `python test/test_app.py` từ bất kỳ thư mục nào. Bài nộp đã kèm sẵn database và model đã train nên chỉ cần `pip install -r requirements.txt`.
 
-**Kiểm thử tự động:**
-
-```bash
-python -m pytest test/test_split_metrics.py
-```
+**Không cần giao diện:** huấn luyện bằng `python -m ml.train`; dự đoán từ model đã lưu bằng `python -m ml.predict --customer 5 --k 10`.
 
 Kết quả (model, `metrics.csv`, biểu đồ) lưu trong `artifacts/`.
 
@@ -81,28 +77,35 @@ ChinookRecommender/
 │  ├─ data_prep.py          # làm sạch, tạo interactions, chia train/test 80/20
 │  ├─ features.py           # feature album / customer / cặp
 │  ├─ recommenders.py       # M1–M5, cùng fit() / recommend()
+│  ├─ train.py              # HUẤN LUYỆN: làm sạch → chia → fit → đánh giá → lưu model
+│  ├─ predict.py            # SUY LUẬN: nạp model đã lưu và gợi ý (không train lại)
 │  └─ evaluate.py           # metric, bootstrap, so sánh model
 ├─ ui/                      # mỗi màn hình có 3 file
 │  ├─ DataMainWindow.ui / .py / DataMainWindowEx.py
 │  ├─ TrainMainWindow.ui / .py / TrainMainWindowEx.py
 │  ├─ EvaluateMainWindow.ui / .py / EvaluateMainWindowEx.py
-│  └─ RecommendMainWindow.ui / .py / RecommendMainWindowEx.py
-├─ test/                    # mở riêng từng cửa sổ để thử bằng tay
-│  ├─ test_data_window.py
-│  ├─ test_train_window.py
-│  ├─ test_evaluate_window.py
-│  ├─ test_recommend_window.py
-│  └─ test_split_metrics.py # kiểm tra tự động chia dữ liệu và metric
+│  ├─ RecommendMainWindow.ui / .py / RecommendMainWindowEx.py
+│  └─ utils.py              # hàm dùng chung: showDataIntoTableWidget, vẽ biểu đồ
+├─ test/                    # mở file nào là xem được giao diện và chạy được mô hình
+│  ├─ test_app.py           # mở toàn bộ ứng dụng (4 màn hình)
+│  ├─ test_data_window.py   # mở màn Dữ liệu
+│  ├─ test_train_window.py  # mở màn Huấn luyện
+│  ├─ test_evaluate_window.py # mở màn Đánh giá
+│  └─ test_recommend_window.py # mở màn Gợi ý
 ├─ images/                  # icon
-├─ artifacts/               # model đã train, metrics.csv, biểu đồ
-├─ config.py                # seed, tỉ lệ chia, đường dẫn
+├─ artifacts/               # recommender.joblib, metrics.csv, biểu đồ
+├─ config.py                # seed, tỉ lệ chia, đường dẫn (Path(__file__).parent)
 ├─ main.py                  # chạy app (mở RecommendMainWindow)
 └─ requirements.txt
 ```
 
 - `ui/`: mỗi màn hình gồm `.ui` (Qt Designer), `.py` (sinh bằng `pyside6-uic`) và `*Ex.py` (logic sự kiện).
 - `dal/`: nơi duy nhất viết SQL. `models/`: lớp dữ liệu thuần. `ml/`: làm sạch, chia dữ liệu, mô hình, đánh giá.
-- `test/`: file mở riêng từng cửa sổ để thử tay, và `test_split_metrics.py` kiểm tra tự động.
+- `test/`: file khởi chạy. Mở file nào cũng thấy giao diện và chạy được mô hình ngay (không phải unit test).
+
+## Quy tắc code
+
+Dự án tuân theo bộ quy tắc ở `TECHSPEC.md` §8.1: train và inference tách file (`ml/train.py`, `ml/predict.py`), model lưu `.joblib` kèm tên feature, đường dẫn tính bằng `Path(__file__)`, SQL dùng placeholder, UI tách `.ui` / `.py` sinh tự động / `*Ex.py`, lỗi báo bằng `QMessageBox`, chuỗi giao diện hoàn toàn tiếng Việt.
 
 ## Phương pháp tóm tắt
 
